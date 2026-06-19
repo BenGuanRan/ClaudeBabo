@@ -20,17 +20,32 @@ struct Session {
     var durationMs: Double
     var linesAdded: Int
     var linesRemoved: Int
+    var contextTokens: Int
+    var outputTokens: Int
+    var exceeds200k: Bool
+    var workStartedAt: Double  // when the current turn began (0 if not working)
+    var turnMs: Double         // duration of the last completed turn
+    var turnDoneAt: Double     // when the last turn finished (Stop)
     var updatedAt: Double
+    var alertAt: Double        // bumped by the Notification hook; drives desktop alerts
 
     var dirName: String {
         if cwd.isEmpty { return "会话" }
         return (cwd as NSString).lastPathComponent
     }
+
+    /// Seconds the current turn has been running (only meaningful while working).
+    func elapsed(now: Double) -> Double {
+        workStartedAt > 0 ? max(0, now - workStartedAt) : 0
+    }
 }
 
 /// A status transition worth notifying the user about.
 struct SessionEvent {
-    enum Kind { case needsInput, finished }
+    enum Kind {
+        case needsInput            // Notification hook: away / permission
+        case longTaskFinished      // a turn longer than the threshold just ended
+    }
     let kind: Kind
     let session: Session
 }
@@ -41,11 +56,19 @@ final class StatusStore {
     static var sessionsDir: String { baseDir + "/sessions" }
 
     private(set) var sessions: [Session] = []
-    private var lastStatus: [String: WorkStatus] = [:]
+    private var lastAlert: [String: Double] = [:]
+    private var lastTurnDone: [String: Double] = [:]
 
     /// Sessions whose files haven't been touched in this long are ignored
     /// (covers crashes that leave orphaned files behind).
     private let staleAfter: TimeInterval = 6 * 3600
+
+    /// Only turns longer than this trigger a "task finished" notification, so
+    /// quick back-and-forth chatting stays quiet.
+    private let longTaskSeconds: Double = 30
+
+    /// Total cost across the currently tracked sessions.
+    var totalCost: Double { sessions.reduce(0) { $0 + $1.costUsd } }
 
     static func ensureDirectories() {
         try? FileManager.default.createDirectory(
@@ -81,22 +104,36 @@ final class StatusStore {
                 durationMs: Self.num(us["duration_ms"]),
                 linesAdded: Int(Self.num(us["lines_added"])),
                 linesRemoved: Int(Self.num(us["lines_removed"])),
-                updatedAt: updated))
+                contextTokens: Int(Self.num(us["context_tokens"])),
+                outputTokens: Int(Self.num(us["output_tokens"])),
+                exceeds200k: (us["exceeds_200k"] as? Bool) ?? false,
+                workStartedAt: Self.num(st["work_started_at"]),
+                turnMs: Self.num(st["turn_ms"]),
+                turnDoneAt: Self.num(st["turn_done_at"]),
+                updatedAt: updated,
+                alertAt: Self.num(st["alert_at"])))
         }
         result.sort { $0.updatedAt > $1.updatedAt }
 
+        // Detect notification-worthy transitions, but only ones that advance
+        // *while we're running*. Sessions seen for the first time (e.g. at
+        // launch) are recorded silently so we don't replay a backlog.
         var events: [SessionEvent] = []
-        var newStatus: [String: WorkStatus] = [:]
+        var newAlert: [String: Double] = [:]
+        var newTurnDone: [String: Double] = [:]
         for s in result {
-            newStatus[s.id] = s.status
-            let prev = lastStatus[s.id]
-            if s.status == .waiting && prev != .waiting {
+            newAlert[s.id] = s.alertAt
+            newTurnDone[s.id] = s.turnDoneAt
+            if let prev = lastAlert[s.id], s.alertAt > prev {
                 events.append(SessionEvent(kind: .needsInput, session: s))
-            } else if s.status == .idle && prev == .working {
-                events.append(SessionEvent(kind: .finished, session: s))
+            }
+            if let prevDone = lastTurnDone[s.id], s.turnDoneAt > prevDone,
+               s.turnMs >= longTaskSeconds * 1000 {
+                events.append(SessionEvent(kind: .longTaskFinished, session: s))
             }
         }
-        lastStatus = newStatus
+        lastAlert = newAlert
+        lastTurnDone = newTurnDone
         sessions = result
         return events
     }

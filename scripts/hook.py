@@ -75,6 +75,7 @@ def main():
         state["status"] = "working"
         state["task"] = truncate(data.get("prompt", ""))
         state["activity"] = ""
+        state["work_started_at"] = time.time()  # for live elapsed + turn duration
     elif event == "PreToolUse":
         state["status"] = "working"
         state["activity"] = data.get("tool_name", "")
@@ -82,12 +83,21 @@ def main():
         state["status"] = "working"
         state["activity"] = ""
     elif event == "Notification":
+        # Claude needs attention (permission prompt, or you've been idle).
+        # Bump alert_at so the app fires a desktop notification.
         state["status"] = "waiting"
         state["activity"] = truncate(data.get("message", ""))
+        state["alert_at"] = time.time()
     elif event == "Stop":
-        state["status"] = "idle"
-        state["task"] = ""
+        # Claude finished a turn — it's your turn now. Record how long the turn
+        # took so the app can notify you when a *long* task completes (short
+        # back-and-forth turns stay quiet).
+        state["status"] = "waiting"
         state["activity"] = ""
+        started = state.get("work_started_at")
+        if started:
+            state["turn_ms"] = (time.time() - started) * 1000.0
+        state["turn_done_at"] = time.time()
     else:
         return  # unknown event: don't write
 

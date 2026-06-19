@@ -105,6 +105,8 @@ with open(settings_path, "w") as f:
 PY
 
 echo "==> Launching ClaudeBabo…"
+pkill -f "ClaudeBabo.app/Contents/MacOS/ClaudeBabo" 2>/dev/null || true
+sleep 1
 open "$APP_DIR"
 
 cat <<EOF

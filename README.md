@@ -6,20 +6,25 @@ A tiny macOS **menu bar** app that shows the live working status of your local
 > 一个小巧的 macOS 菜单栏应用，实时显示本地 Claude Code 会话的工作状态。
 
 ```
-⚪️  no active session        🟢  idle
-🔵  working (thinking/tools)  🟡  waiting for your input
+○ (dashed)  no active session     ● green   idle (fresh session)
+● blue      working (thinking…)    🔔 orange your turn — Claude is waiting
 ```
 
-Click the icon to see, for each session:
+The menu bar shows a colored SF Symbol for state plus your running **cost**
+(e.g. `$0.42`). Click it to see, for each session:
 
-- **Status** — working / waiting / idle
+- **Status** — working (with a live "已 2m15s" timer) / your turn / idle
 - **Current task** — the prompt Claude is working on
 - **Activity** — the tool it's running right now
-- **Usage** — model, cost (USD), duration, lines added/removed
+- **Token usage** — current context size (`🧠 134k`, with ⚠️ past 200k) and
+  this turn's output tokens
+- **Cost & effort** — model, cost (USD), total duration, lines added/removed
 - A shortcut to open that session's folder in Finder
 
-You also get a **macOS notification** when Claude needs your input or finishes a
-task — so you can switch away and get pulled back at the right moment.
+You also get a **macOS notification** when Claude needs your input, or when a
+**long task (>30s) finishes** — so you can switch away and get pulled back at
+the right moment. Toggle notifications and **launch-at-login** right from the
+menu.
 
 ## How it works
 
@@ -93,6 +98,11 @@ settings (a backup is saved first). Restart open Claude Code sessions to finish.
 
 ## Notes & limitations
 
+- **Subscription quota / reset time is not available.** ClaudeBabo can show
+  per-session cost and token usage, but it cannot show your plan's rolling
+  5-hour / weekly limits or reset time (what `/usage` displays). That data is
+  fetched live from Anthropic and is not stored locally (transcripts record
+  `rateLimits: null`), so there is nothing on disk to read.
 - **Existing status line:** if you already have a custom `statusLine`, the
   installer keeps it and prints the command to add manually. Until then,
   status/task still work — only cost/usage need the status line.

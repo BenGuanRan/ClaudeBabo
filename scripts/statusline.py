@@ -19,6 +19,43 @@ import time
 BASE = os.path.expanduser("~/.claude/claudebabo/sessions")
 
 
+def read_tokens(transcript_path):
+    """Parse the most recent assistant turn's token usage from the transcript.
+
+    We read only the tail of the (potentially large) JSONL file for speed. The
+    last assistant message's usage reflects the current context window size
+    (input + cache) and that turn's output.
+    """
+    if not transcript_path or not os.path.exists(transcript_path):
+        return None
+    try:
+        with open(transcript_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 200_000))
+            tail = f.read().decode("utf-8", "ignore")
+    except OSError:
+        return None
+
+    for line in reversed(tail.splitlines()):
+        if '"usage"' not in line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        usage = (obj.get("message") or {}).get("usage") or {}
+        if not usage:
+            continue
+        context = (
+            (usage.get("input_tokens") or 0)
+            + (usage.get("cache_creation_input_tokens") or 0)
+            + (usage.get("cache_read_input_tokens") or 0)
+        )
+        return {"context_tokens": context, "output_tokens": usage.get("output_tokens") or 0}
+    return None
+
+
 def main():
     try:
         data = json.loads(sys.stdin.read())
@@ -30,6 +67,7 @@ def main():
     workspace = data.get("workspace") or {}
     cwd = workspace.get("current_dir") or data.get("cwd", "")
     cost = data.get("cost") or {}
+    tokens = read_tokens(data.get("transcript_path", "")) or {}
 
     usage = {
         "session_id": sid,
@@ -39,6 +77,9 @@ def main():
         "duration_ms": cost.get("total_duration_ms", 0) or 0,
         "lines_added": cost.get("total_lines_added", 0) or 0,
         "lines_removed": cost.get("total_lines_removed", 0) or 0,
+        "context_tokens": tokens.get("context_tokens", 0),
+        "output_tokens": tokens.get("output_tokens", 0),
+        "exceeds_200k": bool(data.get("exceeds_200k_tokens", False)),
         "updated_at": time.time(),
     }
 
@@ -53,7 +94,9 @@ def main():
         pass
 
     dirname = os.path.basename(cwd) if cwd else "~"
-    print("🤖 {}  📁 {}  💰 ${:.2f}".format(model, dirname, usage["cost_usd"]))
+    ctx = usage["context_tokens"]
+    ctx_str = "  🧠 {}k".format(round(ctx / 1000)) if ctx else ""
+    print("🤖 {}  📁 {}  💰 ${:.2f}{}".format(model, dirname, usage["cost_usd"], ctx_str))
 
 
 if __name__ == "__main__":
