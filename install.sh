@@ -27,7 +27,7 @@ cp "$REPO/scripts/hook.py" "$BIN_DIR/hook.py"
 cp "$REPO/scripts/statusline.py" "$BIN_DIR/statusline.py"
 chmod +x "$BIN_DIR/hook.py" "$BIN_DIR/statusline.py"
 
-echo "==> Assembling app bundle at $APP_DIR…"
+echo "==> Assembling app bundle at ${APP_DIR}…"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 cp "$BIN" "$APP_DIR/Contents/MacOS/ClaudeBabo"
